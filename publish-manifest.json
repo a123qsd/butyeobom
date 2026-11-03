@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "repositoryFiles": [
+    ".gitignore",
+    ".nojekyll",
+    "LICENSE",
+    "README.md",
+    "favicon.svg",
+    "index.html",
+    "package.json",
+    "publish-manifest.json",
+    "scripts/build-site.mjs",
+    "scripts/check-release.mjs",
+    "scripts/serve.mjs",
+    "src/app.js",
+    "src/styles.css",
+    "src/transform.js",
+    "tests/browser-smoke.js",
+    "tests/invariants.test.mjs",
+    "tests/preview.test.mjs",
+    "tests/release.test.mjs",
+    "tests/transform.test.mjs"
+  ],
+  "websiteFiles": [
+    ".nojekyll",
+    "LICENSE",
+    "favicon.svg",
+    "index.html",
+    "src/app.js",
+    "src/styles.css",
+    "src/transform.js"
+  ]
+}
