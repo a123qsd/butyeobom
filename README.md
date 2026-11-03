@@ -6,6 +6,20 @@ PDF에서 복사해 끊어진 글의 줄을 확인하며 잇는 작은 브라우
 
 개인·학교·회사 내부 업무에 무료로 사용할 수 있습니다. 프로그램 자체 판매와 외부 이용자에게 프로그램 기능을 유료로 제공하는 경우에는 사전 허락이 필요합니다.
 
+## English
+
+**Butyeobom — Clean up text copied from PDFs**
+
+Butyeobom is a free, browser-based tool that helps tidy up unwanted line breaks in text copied from PDFs. It supports Korean and English text. The interface is currently in Korean.
+
+Paste your text, review the suggested changes, and choose which lines to join. For words split across lines with a hyphen, you can decide whether to keep or remove the hyphen. Compare the result with the original, undo changes, and copy the cleaned text.
+
+It uses rules rather than AI rewriting. Your text is processed in your browser and is not sent to a server or automatically saved by the app. No account or installation is required.
+
+Personal, educational, and internal business use is free. Selling the program or offering its functionality as a paid service requires prior permission under the [project’s license](LICENSE).
+
+[Try Butyeobom](https://a123qsd.github.io/butyeobom/)
+
 ## 사용 흐름
 
 1. 원문을 붙여 넣고 **연결 제안 보기**를 누릅니다.
