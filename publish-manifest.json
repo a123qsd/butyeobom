@@ -13,12 +13,16 @@
     "scripts/check-release.mjs",
     "scripts/serve.mjs",
     "src/app.js",
+    "src/i18n.js",
     "src/styles.css",
+    "src/transform-text.js",
     "src/transform.js",
     "tests/browser-smoke.js",
+    "tests/i18n-browser-smoke.js",
     "tests/invariants.test.mjs",
     "tests/preview.test.mjs",
     "tests/release.test.mjs",
+    "tests/transform-text.test.mjs",
     "tests/transform.test.mjs"
   ],
   "websiteFiles": [
@@ -27,7 +31,9 @@
     "favicon.svg",
     "index.html",
     "src/app.js",
+    "src/i18n.js",
     "src/styles.css",
+    "src/transform-text.js",
     "src/transform.js"
   ]
 }

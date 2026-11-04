@@ -1,4 +1,6 @@
 import { analyzeText, applyChoices } from './transform.js';
+import { initialLanguage, translate } from './i18n.js';
+import { suggestionReason, optionLabel, warningMessage } from './transform-text.js';
 
 const MAX_SOURCE_LENGTH = 100_000;
 const PAGE_SIZE = 20;
@@ -13,6 +15,7 @@ const elements = Object.fromEntries([
   'recommended-count', 'ambiguous-count', 'applied-count', 'filter-description',
   'suggestion-list', 'review-empty', 'empty-title', 'empty-description',
   'pagination', 'previous-page', 'next-page', 'page-description', 'status',
+  'language-select', 'copy-label', 'analyze-label',
 ].map((id) => [id, $(id)]));
 
 const SAMPLE = `문장은 그대로 두고,
@@ -44,6 +47,10 @@ let activeFilter = 'recommended';
 let page = 0;
 let clipboardVersion = 0;
 let output = null;
+let language = initialLanguage(location.search);
+let copyPhase = 'idle';
+let fallbackVisible = false;
+let analysisFailed = false;
 // Textareas normalize CRLF/CR. Preserve the raw text from an explicit full paste
 // until the user edits it; the display remains the browser's normalized view.
 let rawPastedSource = null;
@@ -57,7 +64,23 @@ function announce(message) {
 }
 
 function number(value) {
-  return value.toLocaleString('ko-KR');
+  return value.toLocaleString(language === 'en' ? 'en-US' : 'ko-KR');
+}
+
+function t(key, values) {
+  return translate(language, key, values);
+}
+
+function copyInstruction() {
+  const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+  return t('copyFallback', { shortcut: isApple ? '⌘ Command+C' : 'Ctrl+C' });
+}
+
+function renderCopyState() {
+  elements['copy-button'].disabled = !output?.text || copyPhase === 'pending';
+  elements['copy-label'].textContent = t(copyPhase === 'pending' ? 'copying' : copyPhase === 'copied' ? 'copied' : 'copy');
+  elements['copy-fallback'].hidden = !fallbackVisible;
+  elements['copy-instruction'].textContent = fallbackVisible ? copyInstruction() : '';
 }
 
 function makeElement(tag, className, text) {
@@ -71,12 +94,15 @@ function invalidateOutput() {
   clipboardVersion += 1;
   analysis = null;
   output = null;
+  copyPhase = 'idle';
+  fallbackVisible = false;
+  analysisFailed = false;
   choices = Object.create(null);
   history = [];
   page = 0;
   elements.result.value = '';
-  elements['result-count'].textContent = '0자';
-  elements['result-hint'].textContent = '제안을 적용하면 여기에 반영돼요';
+  elements['result-count'].textContent = t('characterCount', { count: number(0) });
+  elements['result-hint'].textContent = t('resultEmptyHint');
   elements['result-badge'].hidden = true;
   elements['review-section'].hidden = true;
   elements['changes-details'].hidden = true;
@@ -84,28 +110,27 @@ function invalidateOutput() {
   elements['highlighted-result'].replaceChildren();
   elements['suggestion-list'].replaceChildren();
   elements['warning-list'].replaceChildren();
-  elements['copy-fallback'].hidden = true;
-  elements['copy-button'].disabled = true;
-  elements['copy-button'].lastChild.textContent = '결과 복사';
+  renderCopyState();
   elements['undo-button'].disabled = true;
-  elements['analyze-button'].firstChild.textContent = '연결 제안 보기 ';
+  elements['analyze-label'].textContent = t('analyze');
 }
 
 function updateSourceState() {
   const source = currentSource();
   const lineCount = source.length ? source.split(/\r\n|\r|\n/).length : 0;
   const overLimit = source.length > MAX_SOURCE_LENGTH;
-  elements['source-count'].textContent = `${number(source.length)}자 · ${number(lineCount)}줄`;
-  elements['source-error'].hidden = !overLimit;
+  elements['source-count'].textContent = t('sourceCount', { characters: number(source.length), lines: number(lineCount) });
+  elements['source-error'].hidden = !overLimit && !analysisFailed;
   elements['source-error'].textContent = overLimit
-    ? `현재 ${number(source.length)}자로 처리 한도 ${number(MAX_SOURCE_LENGTH)}자를 넘었어요. 원문은 그대로 보관되어 있습니다. 글을 나눠서 입력해 주세요.`
-    : '';
+    ? t('limitError', { count: number(source.length), limit: number(MAX_SOURCE_LENGTH) })
+    : analysisFailed ? t('analysisError') : '';
   if (overLimit) elements.source.setAttribute('aria-invalid', 'true');
   else elements.source.removeAttribute('aria-invalid');
   elements['analyze-button'].disabled = !source.trim() || overLimit;
   elements['reset-button'].disabled = !source.length && !analysis;
   elements['sample-button'].disabled = Boolean(source.length);
-  elements['sample-button'].title = source.length ? '전체 비우기를 누르면 예시를 넣을 수 있어요.' : '';
+  elements['sample-button'].title = source.length ? t('sampleDisabled') : '';
+  elements['analyze-label'].textContent = t(analysis ? 'revisit' : 'analyze');
 }
 
 function groupSuggestions(filter = activeFilter) {
@@ -124,15 +149,15 @@ function updateReviewState() {
   const pending = pendingRecommended().length;
   elements['undo-button'].disabled = !history.length;
   elements['apply-recommended-button'].disabled = !pending;
-  elements['apply-recommended-button'].textContent = pending ? `추천 ${number(pending)}곳 적용` : '추천 적용 완료';
-  if (!groupSuggestions('recommended').length) elements['apply-recommended-button'].textContent = '적용할 추천 없음';
-  elements['applied-count'].textContent = output.appliedCount ? `${number(output.appliedCount)}곳 연결했어요` : '아직 적용한 제안이 없어요';
+  elements['apply-recommended-button'].textContent = pending ? t('applyCount', { count: number(pending) }) : t('allRecommendedApplied');
+  if (!groupSuggestions('recommended').length) elements['apply-recommended-button'].textContent = t('noRecommended');
+  elements['applied-count'].textContent = output.appliedCount ? t('applied', { count: number(output.appliedCount) }) : t('noApplied');
   for (const card of elements['suggestion-list'].querySelectorAll('.suggestion-card')) {
     const selected = choices[card.dataset.suggestion] || 'keep';
     const suggestion = analysis.suggestions.find((item) => item.id === card.dataset.suggestion);
     const option = suggestion?.options.find((item) => item.value === selected);
     card.classList.toggle('is-applied', selected !== 'keep');
-    card.querySelector('.suggestion-state').textContent = selected === 'keep' ? '원문 유지' : `${option?.label || '연결'} 적용`;
+    card.querySelector('.suggestion-state').textContent = selected === 'keep' ? t('keepState') : t('optionApplied', { option: optionLabel(suggestion, option, language) });
     for (const input of card.querySelectorAll('input[type="radio"]')) input.checked = input.value === selected;
   }
 }
@@ -142,18 +167,45 @@ function renderOutput() {
   clipboardVersion += 1;
   output = applyChoices(analysis, choices);
   elements.result.value = output.text;
-  elements['result-count'].textContent = `${number(output.text.length)}자`;
-  elements['result-hint'].textContent = output.appliedCount ? `${number(output.appliedCount)}곳 연결 · 언제든 되돌릴 수 있어요` : '제안을 고르기 전까지 원문 그대로예요';
-  elements['result-badge'].hidden = false;
-  elements['result-badge'].textContent = output.appliedCount ? `${number(output.appliedCount)}곳 연결` : '원문 그대로';
-  elements['copy-button'].disabled = !output.text;
-  elements['copy-button'].lastChild.textContent = '결과 복사';
-  elements['copy-fallback'].hidden = true;
-  elements['changes-details'].hidden = !output.appliedCount;
-  elements['change-count'].textContent = `${number(output.appliedCount)}곳`;
+  copyPhase = 'idle';
+  fallbackVisible = false;
+  renderOutputPresentation();
+}
+
+// Presentation only: language changes never recompute output or assign textarea values.
+function renderOutputPresentation() {
+  const appliedCount = output?.appliedCount || 0;
+  elements['result-count'].textContent = t('characterCount', { count: number(output?.text.length || 0) });
+  elements['result-hint'].textContent = !output ? t('resultEmptyHint') : appliedCount ? t('resultChangedHint', { count: number(appliedCount) }) : t('resultUnchangedHint');
+  elements['result-badge'].hidden = !output;
+  elements['result-badge'].textContent = appliedCount ? t('changedBadge', { count: number(appliedCount) }) : t('originalBadge');
+  renderCopyState();
+  elements['changes-details'].hidden = !appliedCount;
+  elements['change-count'].textContent = t('changeCount', { count: number(appliedCount) });
   if (elements['changes-details'].open) renderHighlights();
   else elements['highlighted-result'].replaceChildren();
+  renderReviewDescription();
   updateReviewState();
+}
+
+function renderReviewDescription() {
+  if (!analysis) return;
+  const recommended = groupSuggestions('recommended').length;
+  const ambiguous = groupSuggestions('ambiguous').length;
+  const protectedCount = analysis.stats.protectedLineCount;
+  elements['recommended-count'].textContent = number(recommended);
+  elements['ambiguous-count'].textContent = number(ambiguous);
+  elements['review-description'].textContent = t('reviewCounts', { recommended: number(recommended), ambiguous: number(ambiguous) })
+    + (protectedCount ? t('protectedLines', { count: number(protectedCount) }) : '')
+    + t(output?.appliedCount ? 'reviewChanged' : 'reviewUnchanged');
+}
+
+function renderWarnings() {
+  if (!analysis) return;
+  const warnings = document.createDocumentFragment();
+  for (const warning of analysis.warnings) warnings.append(makeElement('li', '', warningMessage(warning, language)));
+  elements['warning-list'].replaceChildren(warnings);
+  elements.warnings.hidden = !analysis.warnings.length;
 }
 
 function renderHighlights() {
@@ -165,8 +217,8 @@ function renderHighlights() {
       continue;
     }
     const mark = makeElement('mark', segment.text ? '' : 'empty-change', segment.text);
-    mark.title = segment.text ? '줄바꿈 또는 하이픈을 바꾼 자리 주변' : '줄바꿈 또는 하이픈을 제거한 위치';
-    if (!segment.text) mark.setAttribute('aria-label', '줄바꿈 또는 하이픈을 제거한 위치');
+    mark.title = t(segment.text ? 'changedContext' : 'removedPosition');
+    if (!segment.text) mark.setAttribute('aria-label', t('removedPosition'));
     fragment.append(mark);
   }
   elements['highlighted-result'].replaceChildren(fragment);
@@ -179,9 +231,7 @@ function renderSuggestions() {
   page = Math.max(0, Math.min(page, pageCount - 1));
   elements['recommended-filter'].setAttribute('aria-pressed', String(activeFilter === 'recommended'));
   elements['ambiguous-filter'].setAttribute('aria-pressed', String(activeFilter === 'ambiguous'));
-  elements['filter-description'].textContent = activeFilter === 'recommended'
-    ? '문장 중간에서 끊긴 것으로 보이는 곳이에요. 한꺼번에 적용하거나 하나씩 골라 보세요.'
-    : '문단의 경계나 하이픈처럼 뜻을 살펴야 하는 곳이에요. 원문을 읽고 직접 선택해 주세요.';
+  elements['filter-description'].textContent = t(activeFilter === 'recommended' ? 'recommendedDescription' : 'ambiguousDescription');
   const fragment = document.createDocumentFragment();
   const current = suggestions.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const originalLines = analysis.source.split(/\r\n|\r|\n/);
@@ -190,7 +240,7 @@ function renderSuggestions() {
     const card = makeElement('article', 'suggestion-card');
     card.dataset.suggestion = suggestion.id;
     const header = makeElement('div', 'suggestion-header');
-    header.append(makeElement('span', 'line-label', `${number(suggestion.line)}–${number(suggestion.line + 1)}줄`), makeElement('span', 'suggestion-state', '원문 유지'));
+    header.append(makeElement('span', 'line-label', t('lineRange', { first: number(suggestion.line), last: number(suggestion.line + 1) })), makeElement('span', 'suggestion-state', t('keepState')));
     const context = makeElement('div', 'context-lines');
     const boundaryLines = [originalLines[suggestion.line - 1] || '', originalLines[suggestion.line] || ''];
     for (const [offset, text] of boundaryLines.entries()) {
@@ -206,11 +256,11 @@ function renderSuggestions() {
     }
     const bottom = makeElement('div', 'suggestion-bottom');
     const reasonId = `reason-${activeFilter}-${page}-${index}`;
-    const reason = makeElement('p', 'suggestion-reason', suggestion.reason);
+    const reason = makeElement('p', 'suggestion-reason', suggestionReason(suggestion, language));
     reason.id = reasonId;
     const fieldset = makeElement('fieldset', 'choice-options');
     fieldset.setAttribute('aria-describedby', reasonId);
-    fieldset.append(makeElement('legend', 'sr-only', `${suggestion.line}줄과 ${suggestion.line + 1}줄 사이 처리`));
+    fieldset.append(makeElement('legend', 'sr-only', t('boundaryLegend', { first: number(suggestion.line), last: number(suggestion.line + 1) })));
     for (const option of suggestion.options) {
       const label = makeElement('label', 'choice-label');
       const input = document.createElement('input');
@@ -219,7 +269,7 @@ function renderSuggestions() {
       input.value = option.value;
       input.dataset.suggestion = suggestion.id;
       input.checked = (choices[suggestion.id] || 'keep') === option.value;
-      label.append(input, makeElement('span', '', option.label));
+      label.append(input, makeElement('span', '', optionLabel(suggestion, option, language)));
       fieldset.append(label);
     }
     bottom.append(reason, fieldset);
@@ -232,13 +282,13 @@ function renderSuggestions() {
   elements['review-empty'].hidden = suggestions.length > 0;
   if (!suggestions.length) {
     const noSuggestions = !analysis.suggestions.length;
-    elements['empty-title'].textContent = noSuggestions ? '지금은 이을 줄이 없어요' : activeFilter === 'recommended' ? '자동으로 추천할 곳은 없어요' : '따로 판단할 곳은 없어요';
-    elements['empty-description'].textContent = noSuggestions ? '원문을 그대로 결과에 옮겼어요. 필요하면 복사해서 사용하세요.' : activeFilter === 'recommended' ? '직접 판단 탭에서 문맥을 살펴볼 수 있어요.' : '연결 추천 탭에서 이어 붙일 곳을 골라 보세요.';
+    elements['empty-title'].textContent = t(noSuggestions ? 'emptyAllTitle' : activeFilter === 'recommended' ? 'emptyRecommendedTitle' : 'emptyAmbiguousTitle');
+    elements['empty-description'].textContent = t(noSuggestions ? 'emptyAllDescription' : activeFilter === 'recommended' ? 'emptyRecommendedDescription' : 'emptyAmbiguousDescription');
   }
   elements.pagination.hidden = pageCount <= 1;
   elements['previous-page'].disabled = page <= 0;
   elements['next-page'].disabled = page >= pageCount - 1;
-  elements['page-description'].textContent = `${number(page + 1)} / ${number(pageCount)} 페이지 · ${PAGE_SIZE}개씩 보기`;
+  elements['page-description'].textContent = t('pageDescription', { page: number(page + 1), pages: number(pageCount), size: number(PAGE_SIZE) });
   updateReviewState();
 }
 
@@ -259,7 +309,7 @@ function analyze() {
   if (analysis && analysis.source === source) {
     elements['review-title'].focus({ preventScroll: true });
     elements['review-title'].scrollIntoView({ block: 'start', behavior: 'auto' });
-    announce('현재 선택과 되돌리기 기록을 유지한 채 제안을 다시 표시합니다.');
+    announce(t('revisitAnnouncement'));
     return;
   }
   invalidateOutput();
@@ -268,26 +318,19 @@ function analyze() {
     const recommended = groupSuggestions('recommended').length;
     const ambiguous = groupSuggestions('ambiguous').length;
     activeFilter = recommended || !ambiguous ? 'recommended' : 'ambiguous';
-    elements['recommended-count'].textContent = number(recommended);
-    elements['ambiguous-count'].textContent = number(ambiguous);
-    const protectedCount = analysis.stats.protectedLineCount;
-    elements['review-description'].textContent = `연결 추천 ${number(recommended)}곳 · 직접 판단 ${number(ambiguous)}곳${protectedCount ? ` · 구조를 보호한 ${number(protectedCount)}줄` : ''}. 아직 원문은 바꾸지 않았어요.`;
-    const warnings = document.createDocumentFragment();
-    for (const warning of analysis.warnings) warnings.append(makeElement('li', '', warning.message));
-    elements['warning-list'].replaceChildren(warnings);
-    elements.warnings.hidden = !analysis.warnings.length;
+    renderWarnings();
     elements['review-section'].hidden = false;
     renderOutput();
     renderSuggestions();
     elements.source.scrollTop = 0;
     elements.result.scrollTop = 0;
-    elements['analyze-button'].firstChild.textContent = '제안 다시 보기 ';
-    announce(`분석을 마쳤어요. 연결 추천 ${number(recommended)}곳, 직접 판단 ${number(ambiguous)}곳입니다. 원문은 그대로입니다.`);
+    elements['analyze-label'].textContent = t('revisit');
+    announce(t('analyzedAnnouncement', { recommended: number(recommended), ambiguous: number(ambiguous) }));
   } catch (error) {
     invalidateOutput();
-    elements['source-error'].hidden = false;
-    elements['source-error'].textContent = '제안을 만드는 중 문제가 생겼어요. 원문은 그대로 있습니다. 글을 나눠서 다시 시도해 주세요.';
-    announce('제안을 만들지 못했어요. 원문은 유지되었습니다.');
+    analysisFailed = true;
+    updateSourceState();
+    announce(t('analysisFailedAnnouncement'));
   }
 }
 
@@ -298,9 +341,8 @@ function selectResult() {
 }
 
 function showCopyFallback() {
-  const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
-  elements['copy-fallback'].hidden = false;
-  elements['copy-instruction'].textContent = `자동 복사를 사용할 수 없어 결과를 선택했어요. ${isApple ? '⌘ Command+C' : 'Ctrl+C'}로 복사하거나 선택한 글의 복사 메뉴를 사용해 주세요.`;
+  fallbackVisible = true;
+  renderCopyState();
   selectResult();
   announce(elements['copy-instruction'].textContent);
 }
@@ -310,7 +352,7 @@ elements.source.addEventListener('input', () => {
   rawPastedSource = null;
   invalidateOutput();
   updateSourceState();
-  if (hadAnalysis) announce('원문이 바뀌어 이전 제안과 결과를 비웠어요. 연결 제안을 다시 확인해 주세요.');
+  if (hadAnalysis) announce(t('editedAnnouncement'));
 });
 
 elements.source.addEventListener('paste', (event) => {
@@ -326,7 +368,7 @@ elements.source.addEventListener('paste', (event) => {
   elements.source.value = pasted;
   elements.source.setSelectionRange(elements.source.value.length, elements.source.value.length);
   updateSourceState();
-  if (hadAnalysis) announce('새 원문을 붙여 넣어 이전 제안과 결과를 비웠어요. 연결 제안을 다시 확인해 주세요.');
+  if (hadAnalysis) announce(t('pastedAnnouncement'));
 });
 
 elements['sample-button'].addEventListener('click', () => {
@@ -338,7 +380,7 @@ elements['sample-button'].addEventListener('click', () => {
   elements.source.focus();
   elements.source.setSelectionRange(0, 0);
   elements.source.scrollTop = 0;
-  announce('예시를 넣었어요. 연결 제안 보기를 눌러 시작해 보세요.');
+  announce(t('sampleAnnouncement'));
 });
 
 elements['reset-button'].addEventListener('click', () => {
@@ -347,14 +389,14 @@ elements['reset-button'].addEventListener('click', () => {
   elements.source.value = '';
   updateSourceState();
   elements.source.focus();
-  announce('원문, 결과, 선택 기록을 모두 비웠어요.');
+  announce(t('resetAnnouncement'));
 });
 
 elements['analyze-button'].addEventListener('click', analyze);
 
 elements['apply-recommended-button'].addEventListener('click', () => {
   const changes = pendingRecommended().map((suggestion) => ({ id: suggestion.id, before: choices[suggestion.id] || 'keep', after: 'join' }));
-  recordChanges(changes, `추천 ${number(changes.length)}곳을 연결했어요. 직접 판단할 곳은 그대로입니다.`);
+  recordChanges(changes, t('appliedAnnouncement', { count: number(changes.length) }));
 });
 
 elements['suggestion-list'].addEventListener('change', (event) => {
@@ -365,7 +407,7 @@ elements['suggestion-list'].addEventListener('change', (event) => {
   const before = choices[suggestion.id] || 'keep';
   if (before === input.value) return;
   const option = suggestion.options.find((item) => item.value === input.value);
-  recordChanges([{ id: suggestion.id, before, after: input.value }], `${suggestion.line}줄과 ${suggestion.line + 1}줄 사이: ${option.label} 선택을 적용했어요.`);
+  recordChanges([{ id: suggestion.id, before, after: input.value }], t('choiceAnnouncement', { first: number(suggestion.line), last: number(suggestion.line + 1), option: optionLabel(suggestion, option, language) }));
 });
 
 elements['undo-button'].addEventListener('click', () => {
@@ -376,7 +418,7 @@ elements['undo-button'].addEventListener('click', () => {
     else choices[change.id] = change.before;
   }
   renderOutput();
-  announce(`마지막 선택 ${number(changes.length)}곳을 되돌렸어요.`);
+  announce(t('undoAnnouncement', { count: number(changes.length) }));
 });
 
 for (const filter of ['recommended', 'ambiguous']) {
@@ -384,7 +426,7 @@ for (const filter of ['recommended', 'ambiguous']) {
     activeFilter = filter;
     page = 0;
     renderSuggestions();
-    announce(`${filter === 'recommended' ? '연결 추천' : '직접 판단'} ${number(groupSuggestions().length)}곳을 표시합니다.`);
+    announce(t('filterAnnouncement', { filter: t(filter), count: number(groupSuggestions().length) }));
   });
 }
 
@@ -399,32 +441,89 @@ for (const [id, direction] of [['previous-page', -1], ['next-page', 1]]) {
 }
 
 elements['copy-button'].addEventListener('click', async () => {
-  if (!output?.text) return;
+  if (!output?.text || copyPhase === 'pending') return;
   const version = ++clipboardVersion;
   const text = output.text;
-  elements['copy-button'].disabled = true;
+  copyPhase = 'pending';
+  renderCopyState();
   try {
     if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
     await navigator.clipboard.writeText(text);
     if (version !== clipboardVersion) return;
-    elements['copy-button'].lastChild.textContent = '복사했어요';
-    elements['copy-fallback'].hidden = true;
-    announce('결과를 복사했어요.');
+    copyPhase = 'copied';
+    fallbackVisible = false;
+    renderCopyState();
+    announce(t('copiedAnnouncement'));
   } catch {
     if (version !== clipboardVersion) return;
+    copyPhase = 'idle';
     showCopyFallback();
   } finally {
-    if (version === clipboardVersion) elements['copy-button'].disabled = !output?.text;
+    if (version === clipboardVersion) renderCopyState();
   }
 });
 
 elements['select-result-button'].addEventListener('click', () => {
   selectResult();
-  announce('결과 전체를 선택했어요. 키보드 단축키나 복사 메뉴로 복사해 주세요.');
+  announce(t('selectedAnnouncement'));
 });
 
 elements['changes-details'].addEventListener('toggle', () => {
   if (elements['changes-details'].open) renderHighlights();
 });
 
-updateSourceState();
+function renderLanguage() {
+  const focused = document.activeElement;
+  const focusedChoice = focused instanceof HTMLInputElement && focused.dataset.suggestion
+    ? { id: focused.dataset.suggestion, value: focused.value } : null;
+  const editorViews = [elements.source, elements.result].map((element) => ({
+    element, start: element.selectionStart, end: element.selectionEnd,
+    direction: element.selectionDirection, top: element.scrollTop, left: element.scrollLeft,
+  }));
+  const highlightView = { top: elements['highlighted-result'].scrollTop, left: elements['highlighted-result'].scrollLeft };
+  const windowView = { left: window.scrollX, top: window.scrollY };
+
+  document.documentElement.lang = language;
+  elements.status.lang = language;
+  document.title = t('title');
+  document.querySelector('meta[name="description"]').content = t('description');
+  elements['language-select'].value = language;
+  for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = t(node.dataset.i18n);
+  for (const [attribute, key] of [['placeholder', 'i18nPlaceholder'], ['aria-label', 'i18nAriaLabel']]) {
+    for (const node of document.querySelectorAll(`[data-i18n-${attribute}]`)) node.setAttribute(attribute, t(node.dataset[key]));
+  }
+  updateSourceState();
+  renderOutputPresentation();
+  renderWarnings();
+  renderSuggestions();
+
+  if (focusedChoice) {
+    const replacement = [...elements['suggestion-list'].querySelectorAll('input')]
+      .find((input) => input.dataset.suggestion === focusedChoice.id && input.value === focusedChoice.value);
+    replacement?.focus({ preventScroll: true });
+  } else if (focused instanceof HTMLElement && focused.isConnected && document.activeElement !== focused) {
+    focused.focus({ preventScroll: true });
+  }
+  for (const view of editorViews) {
+    view.element.setSelectionRange(view.start, view.end, view.direction);
+    view.element.scrollTop = view.top;
+    view.element.scrollLeft = view.left;
+  }
+  elements['highlighted-result'].scrollTop = highlightView.top;
+  elements['highlighted-result'].scrollLeft = highlightView.left;
+  window.scrollTo(windowView.left, windowView.top);
+}
+
+elements['language-select'].addEventListener('change', () => {
+  language = elements['language-select'].value === 'en' ? 'en' : 'ko';
+  // Only a nonpersonal language code is written to the URL. No text or choices persist.
+  const url = new URL(location.href);
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('lang', language);
+  try { window.history.replaceState(null, '', url); } catch { /* Memory-only selection still works. */ }
+  renderLanguage();
+  announce(t('languageAnnouncement'));
+});
+
+renderLanguage();

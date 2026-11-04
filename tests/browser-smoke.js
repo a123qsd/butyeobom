@@ -5,7 +5,9 @@ async (page) => {
   const ensure = (condition, message) => { if (!condition) throw new Error(message); };
   page.on('request', (request) => requests.push({ method: request.method(), url: request.url() }));
   page.on('pageerror', (error) => errors.push(error.message));
-  const appURL = /^https?:/.test(page.url()) ? page.url() : 'http://127.0.0.1:4173/';
+  const baselineURL = new URL(/^https?:/.test(page.url()) ? page.url() : 'http://127.0.0.1:4173/');
+  baselineURL.searchParams.set('lang', 'ko');
+  const appURL = baselineURL.href;
   const appOrigin = new URL(appURL).origin;
   await page.setViewportSize({ width: 1366, height: 1000 });
   await page.goto(appURL, { waitUntil: 'networkidle' });

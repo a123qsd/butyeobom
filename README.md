@@ -4,13 +4,17 @@ PDF에서 복사해 끊어진 글의 줄을 확인하며 잇는 작은 브라우
 
 [브라우저에서 사용하기](https://a123qsd.github.io/butyeobom/) · [이용 조건](LICENSE) · [오류·개선 제안 및 이용 허락 문의](https://github.com/a123qsd/butyeobom/issues)
 
+상단의 **한국어 / English**에서 화면 언어를 바꿀 수 있습니다. 화면 언어와 관계없이 한국어·영어 텍스트를 처리하며, 전환 중에도 입력·연결 선택·되돌리기 기록을 유지합니다.
+
 개인·학교·회사 내부 업무에 무료로 사용할 수 있습니다. 프로그램 자체 판매와 외부 이용자에게 프로그램 기능을 유료로 제공하는 경우에는 사전 허락이 필요합니다.
 
 ## English
 
 **Butyeobom — Clean up text copied from PDFs**
 
-Butyeobom is a free, browser-based tool that helps tidy up unwanted line breaks in text copied from PDFs. It supports Korean and English text. The interface is currently in Korean.
+Butyeobom is a free, browser-based tool that helps tidy up unwanted line breaks in text copied from PDFs. It supports Korean and English text, with a choice of Korean or English for the interface.
+
+Use **한국어 / English** at the top of the page to switch the interface language. Switching keeps your text, selected changes, and undo history. The interface language does not change how your text is processed.
 
 Paste your text, review the suggested changes, and choose which lines to join. For words split across lines with a hyphen, you can decide whether to keep or remove the hyphen. Compare the result with the original, undo changes, and copy the cleaned text.
 
@@ -18,9 +22,11 @@ It uses rules rather than AI rewriting. Your text is processed in your browser a
 
 Personal, educational, and internal business use is free. Selling the program or offering its functionality as a paid service requires prior permission under the [project’s license](LICENSE).
 
-[Try Butyeobom](https://a123qsd.github.io/butyeobom/)
+[Try Butyeobom in English](https://a123qsd.github.io/butyeobom/?lang=en)
 
 ## 사용 흐름
+
+화면 상단에서 **한국어** 또는 **English**를 선택합니다. 영어 화면을 바로 열려면 주소에 `?lang=en`을 붙일 수 있습니다.
 
 1. 원문을 붙여 넣고 **연결 제안 보기**를 누릅니다.
 2. 추천 연결을 적용하거나, 줄마다 원문 유지·연결을 선택합니다.
@@ -48,6 +54,8 @@ npm test
 
 브라우저 시나리오는 `tests/browser-smoke.js`에 있습니다. 로컬 서버와 별도 Playwright CLI 세션을 실행한 뒤 `playwright-cli run-code --filename tests/browser-smoke.js`로 검사할 수 있습니다. 배포 앱에는 Playwright가 포함되지 않습니다.
 
+언어 전환과 양쪽 화면의 흐름은 `playwright-cli run-code --filename tests/i18n-browser-smoke.js`로 검사합니다.
+
 개발 서버는 이 컴퓨터에서만 접속할 수 있도록 루프백 주소에 바인딩합니다. `index.html`, `favicon.svg`, `src/`의 앱 자산만 제공합니다. 공개 호스팅에는 이 정적 자산만 필요합니다. 브라우저 모듈을 사용하므로 HTML 파일을 직접 더블클릭하는 방식보다 HTTP 정적 서버에서 실행해야 합니다.
 
 검증은 순수 함수·불변성·로컬 서버 자동 검사와 Chrome의 실제 브라우저 조작으로 진행했습니다. 320·390·768·1366px 화면, 키보드 선택, 긴 입력, 반복 클릭, 되돌리기, 초기화와 복사 경합을 확인했습니다. 복사 성공·거절·지연은 브라우저 API를 검사 중에만 대체했고, CRLF 붙여넣기는 합성 이벤트로 확인했습니다. 실제 OS 클립보드 권한창, iOS·Android 기기, Safari·Firefox, 화면 읽기 프로그램의 전체 흐름은 직접 검사하지 않았습니다.
@@ -61,11 +69,12 @@ npm run check:release
 npm run build
 ```
 
-게시 검사는 Git에 등록된 파일 목록과 실제 내용이 목록과 일치하는지, 자격증명 형태의 문자열·연락 이메일·로컬 계정 경로·심볼릭 링크가 포함됐는지 확인합니다. 자동 검색만으로 모든 민감한 내용을 찾을 수 있는 것은 아니므로 변경 내용도 직접 검토해야 합니다. 빌드는 새 `_site` 디렉터리에 허용된 웹사이트 파일 7개만 복사하며, 기존 디렉터리를 덮어쓰지 않습니다. GitHub Pages에는 `gh-pages` 브랜치의 이 정적 파일만 게시합니다.
+게시 검사는 Git에 등록된 파일 목록과 실제 내용이 목록과 일치하는지, 자격증명 형태의 문자열·연락 이메일·로컬 계정 경로·심볼릭 링크가 포함됐는지 확인합니다. 자동 검색만으로 모든 민감한 내용을 찾을 수 있는 것은 아니므로 변경 내용도 직접 검토해야 합니다. 빌드는 새 `_site` 디렉터리에 허용된 웹사이트 파일 9개만 복사하며, 기존 디렉터리를 덮어쓰지 않습니다. GitHub Pages에는 `gh-pages` 브랜치의 이 정적 파일만 게시합니다.
 
 ## 개인정보와 처리 범위
 
 - 입력은 현재 페이지의 메모리에서만 처리합니다. 앱에 서버 전송, 분석·추적, 로그인, 쿠키, 자동 저장 기능이 없습니다.
+- 화면 언어는 메모리와 URL의 `lang` 값으로만 유지합니다. 입력한 글이나 연결 선택을 URL·브라우저 저장소에 넣지 않습니다.
 - 외부 CDN, 웹폰트, API를 사용하지 않습니다. 페이지를 열 때 정적 파일을 불러온 뒤 변환은 브라우저 안에서 수행합니다.
 - 입력창의 맞춤법 검사와 자동 완성을 끕니다. 앱은 클립보드를 자동으로 읽지 않습니다.
 - **복사** 버튼을 누르면 브라우저를 통해 운영체제 클립보드에 결과를 씁니다. 브라우저·확장 프로그램·운영체제의 별도 기능은 이 앱이 제어하지 않습니다.

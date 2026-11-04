@@ -7,6 +7,8 @@ const files = new Map([
   ['/', ['../index.html', 'text/html; charset=utf-8']],
   ['/index.html', ['../index.html', 'text/html; charset=utf-8']],
   ['/src/app.js', ['../src/app.js', 'text/javascript; charset=utf-8']],
+  ['/src/i18n.js', ['../src/i18n.js', 'text/javascript; charset=utf-8']],
+  ['/src/transform-text.js', ['../src/transform-text.js', 'text/javascript; charset=utf-8']],
   ['/src/transform.js', ['../src/transform.js', 'text/javascript; charset=utf-8']],
   ['/src/styles.css', ['../src/styles.css', 'text/css; charset=utf-8']],
   ['/favicon.svg', ['../favicon.svg', 'image/svg+xml']],
@@ -18,7 +20,7 @@ export function createPreviewServer() {
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), clipboard-read=()');
-    response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
     if (!['GET', 'HEAD'].includes(request.method)) {
       response.writeHead(405, { Allow: 'GET, HEAD' }).end();
       return;

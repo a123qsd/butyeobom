@@ -29,7 +29,7 @@ body {
   line-height:1.6
 }
 
-button,textarea {
+button,textarea,select {
   font:inherit
 }
 
@@ -57,7 +57,7 @@ button,summary {
   touch-action:manipulation
 }
 
-button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible {
+button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible {
   outline:3px solid #8a6629;
   outline-offset:4px
 }
@@ -101,6 +101,33 @@ p,h1,h2,h3 {
   align-items:center;
   justify-content:space-between;
   border-bottom:1px solid #e2e3da
+}
+
+.header-controls {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:24px;
+  flex-wrap:wrap
+}
+
+.language-control {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:var(--muted);
+  font-size:12px
+}
+
+.language-control select {
+  min-height:40px;
+  max-width:100%;
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:7px 9px;
+  background:var(--white);
+  color:var(--ink);
+  cursor:pointer
 }
 
 .wordmark {
@@ -168,7 +195,7 @@ p,h1,h2,h3 {
   font-weight:760
 }
 
-.hero h1>span {
+.hero h1>.hero-emphasis {
   color:var(--green)
 }
 
@@ -270,11 +297,14 @@ p,h1,h2,h3 {
 
 .section-heading {
   justify-content:space-between;
-  margin-bottom:15px
+  margin-bottom:15px;
+  flex-wrap:wrap;
+  gap:10px
 }
 
 .workspace-title {
-  gap:12px
+  gap:12px;
+  flex-wrap:wrap
 }
 
 .workspace-title h2 {
@@ -333,7 +363,8 @@ p,h1,h2,h3 {
   justify-content:space-between;
   gap:10px;
   border-bottom:1px solid #e9ebe2;
-  min-height:63px
+  min-height:63px;
+  flex-wrap:wrap
 }
 
 .result-panel .editor-heading {
@@ -429,7 +460,8 @@ p,h1,h2,h3 {
   font-size:12px;
   line-height:1.5;
   color:#5f6d57;
-  font-variant-numeric:tabular-nums
+  font-variant-numeric:tabular-nums;
+  flex-wrap:wrap
 }
 
 .result-badge {
@@ -481,7 +513,7 @@ p,h1,h2,h3 {
   min-height:46px
 }
 
-.primary-button>span {
+.primary-button>span[aria-hidden="true"] {
   font-size:19px;
   line-height:1;
   font-weight:400
@@ -524,7 +556,7 @@ p,h1,h2,h3 {
   color:#56644c
 }
 
-.secondary-button>span {
+.secondary-button>span[aria-hidden="true"] {
   font-size:16px
 }
 
@@ -567,7 +599,7 @@ p,h1,h2,h3 {
   display:none
 }
 
-.changes-details summary>span:not(.summary-chevron) {
+.changes-details summary>#change-count {
   color:#5f6d57;
   font-size:12px;
   font-weight:400
@@ -699,7 +731,7 @@ p,h1,h2,h3 {
   font-weight:750
 }
 
-.filter-button>span {
+.filter-button>.filter-count {
   display:inline-block;
   min-width:21px;
   border-radius:4px;
@@ -710,7 +742,7 @@ p,h1,h2,h3 {
   font-weight:500
 }
 
-.filter-button[aria-pressed="true"]>span {
+.filter-button[aria-pressed="true"]>.filter-count {
   background:#dce7d5;
   color:#345d35
 }
@@ -841,8 +873,9 @@ p,h1,h2,h3 {
   padding:5px 8px;
   font-size:12px;
   color:#5f6d57;
-  white-space:nowrap;
-  min-height:32px
+  white-space:normal;
+  min-height:32px;
+  max-width:100%
 }
 
 .choice-label:has(input:checked) {
@@ -979,11 +1012,11 @@ p,h1,h2,h3 {
   display:none
 }
 
-.about-detail summary>span {
+.about-detail summary>span[aria-hidden="true"] {
   font-size:14px
 }
 
-.about-detail[open] summary>span {
+.about-detail[open] summary>span[aria-hidden="true"] {
   transform:rotate(45deg)
 }
 
@@ -1137,7 +1170,15 @@ p,h1,h2,h3 {
     padding:0 22px
   }
   .site-header {
-    height:76px
+    height:auto;
+    min-height:94px;
+    padding:15px 0;
+    gap:12px;
+    flex-wrap:wrap
+  }
+  .header-controls {
+    gap:12px;
+    max-width:100%
   }
   .wordmark {
     font-size:23px
@@ -1158,6 +1199,10 @@ p,h1,h2,h3 {
   .hero h1 {
     font-size:43px;
     letter-spacing:-2.3px
+  }
+  :lang(en) .hero h1 {
+    font-size:clamp(33px,8.5vw,43px);
+    letter-spacing:-1.8px
   }
   .hero-description {
     font-size:13px;
@@ -1243,7 +1288,8 @@ p,h1,h2,h3 {
   }
   .review-actions>.primary-button {
     width:auto;
-    flex:1
+    flex:1;
+    white-space:normal
   }
   .review-actions>.secondary-button {
     flex:1
@@ -1255,7 +1301,8 @@ p,h1,h2,h3 {
     margin-top:16px
   }
   .filter-buttons {
-    gap:22px
+    gap:22px;
+    flex-wrap:wrap
   }
   .filter-button {
     font-size:12px;
@@ -1358,8 +1405,26 @@ p,h1,h2,h3 {
     font-size:14px;
     max-height:250px
   }
+  .pagination {
+    flex-wrap:wrap;
+    gap:10px
+  }
   .result-badge {
     display:inline-block
+  }
+}
+
+@media(max-width:480px) {
+  .header-controls {
+    width:100%;
+    justify-content:space-between
+  }
+  .language-control {
+    margin-left:auto
+  }
+  .result-panel .panel-label {
+    flex-wrap:wrap;
+    white-space:normal
   }
 }
 
