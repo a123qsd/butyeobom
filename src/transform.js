@@ -145,19 +145,33 @@ function classifyJoin(left, right, hasBoundarySpace) {
     : '줄바꿈을 공백 하나로 바꿉니다.';
 
   let uncertainty = '';
-  if (unsupported) uncertainty = '이 문자 체계의 단어 경계를 판단하지 못하므로 직접 확인해 주세요.';
-  else if (SENTENCE_END.test(left)) uncertainty = '문장이 끝난 자리라 문단 구분일 수 있습니다.';
-  else if (looksLikeHeading(left) || looksLikeHeading(right) || /[:：]$/u.test(left)) uncertainty = '제목이나 짧은 독립 문장일 수 있습니다.';
-  else if (korean && !hasBoundarySpace) uncertainty = '한국어는 단어 중간에서 줄이 바뀐 것인지 판단할 수 없어 공백을 확인해야 합니다.';
-  else if (cjkBoundary && !hasBoundarySpace) uncertainty = '한자·일본어 문자 사이에 공백이 필요한지 직접 확인해 주세요.';
-  else if (!((LATIN.test(tail) || /[,;\d]/u.test(tail)) && LATIN.test(head) && LOWERCASE.test(head)) && !cjkBoundary && !(korean && hasBoundarySpace)) {
+  let reasonCode = 'CONTINUATION';
+  if (unsupported) {
+    uncertainty = '이 문자 체계의 단어 경계를 판단하지 못하므로 직접 확인해 주세요.';
+    reasonCode = 'UNSUPPORTED_SCRIPT';
+  } else if (SENTENCE_END.test(left)) {
+    uncertainty = '문장이 끝난 자리라 문단 구분일 수 있습니다.';
+    reasonCode = 'SENTENCE_END';
+  } else if (looksLikeHeading(left) || looksLikeHeading(right) || /[:：]$/u.test(left)) {
+    uncertainty = '제목이나 짧은 독립 문장일 수 있습니다.';
+    reasonCode = 'POSSIBLE_HEADING';
+  } else if (korean && !hasBoundarySpace) {
+    uncertainty = '한국어는 단어 중간에서 줄이 바뀐 것인지 판단할 수 없어 공백을 확인해야 합니다.';
+    reasonCode = 'KOREAN_WORD_BOUNDARY';
+  } else if (cjkBoundary && !hasBoundarySpace) {
+    uncertainty = '한자·일본어 문자 사이에 공백이 필요한지 직접 확인해 주세요.';
+    reasonCode = 'CJK_SPACING';
+  } else if (!((LATIN.test(tail) || /[,;\d]/u.test(tail)) && LATIN.test(head) && LOWERCASE.test(head)) && !cjkBoundary && !(korean && hasBoundarySpace)) {
     uncertainty = '줄 경계가 본문 안의 단순 줄바꿈인지 직접 확인해 주세요.';
+    reasonCode = 'UNCERTAIN_BOUNDARY';
   }
 
   return {
     kind: uncertainty ? 'ambiguous' : 'join',
     recommended: !uncertainty,
     reason: `${uncertainty || '이어지는 본문 줄로 보입니다.'} ${spacing}`,
+    reasonCode,
+    spacingCode: hasBoundarySpace ? 'KEEP_EXISTING_SPACES' : 'INSERT_SPACE',
     replacement,
     korean,
     unsupported,
@@ -190,6 +204,9 @@ export function analyzeText(source) {
     let kind;
     let recommended;
     let reason;
+    let reasonCode;
+    let spacingCode;
+    let trimBoundarySpaces = false;
     let options;
 
     if (hyphen) {
@@ -201,6 +218,9 @@ export function analyzeText(source) {
       if (HANGUL.test(left) || HANGUL.test(right)) koreanCount += 1;
       if (hasUnsupportedLetters(left) || hasUnsupportedLetters(right)) unsupportedCount += 1;
       reason = '줄 끝 하이픈이 원래 단어의 일부인지 줄 나눔 표시인지 판단할 수 없습니다. 하이픈 유지 또는 제거를 직접 선택해 주세요.';
+      reasonCode = 'HYPHEN_REVIEW';
+      spacingCode = 'HYPHEN_CHOICE';
+      trimBoundarySpaces = Boolean(trailingSpace || leadingSpace);
       if (trailingSpace || leadingSpace) reason += ' 연결할 때 하이픈 뒤와 다음 줄 앞의 경계 공백도 제거합니다.';
       options = [
         { value: 'join', label: '하이픈 유지하고 연결', replacement: '-' },
@@ -208,7 +228,7 @@ export function analyzeText(source) {
       ];
     } else {
       const classification = classifyJoin(left, right, Boolean(trailingSpace || leadingSpace));
-      ({ kind, recommended, reason } = classification);
+      ({ kind, recommended, reason, reasonCode, spacingCode } = classification);
       if (classification.korean) koreanCount += 1;
       if (classification.unsupported) unsupportedCount += 1;
       options = [{ value: 'join', label: '줄 연결', replacement: classification.replacement }];
@@ -229,17 +249,21 @@ export function analyzeText(source) {
       contextBefore: contextBefore(source, start),
       contextAfter: contextAfter(source, end),
       reason,
+      reasonCode,
+      spacingCode,
+      trimBoundarySpaces,
+      allowsTightJoin: options.some((option) => option.value === 'join-tight'),
       recommended,
       options: [{ value: 'keep', label: '원문 유지', replacement: before }, ...options],
     });
   }
 
   const warnings = [];
-  if (protectedSet.size) warnings.push({ code: 'PROTECTED_STRUCTURE', message: `목록·표·코드 등 구조가 있는 ${protectedSet.size}개 줄은 자동 판단 대상에서 제외했습니다. 이어지는 줄도 같은 문단이면 함께 보호합니다.` });
-  if (koreanCount) warnings.push({ code: 'KOREAN_SPACING', message: '한국어는 줄 끝이 단어 중간일 수 있습니다. 연결 후 띄어쓰기를 직접 확인해 주세요. 뜻이나 맞춤법은 교정하지 않습니다.' });
-  if (hyphenCount) warnings.push({ code: 'HYPHEN_REVIEW', message: '줄 끝 하이픈은 자동으로 제거하지 않습니다. 각 위치에서 원문 유지, 하이픈 유지 연결, 하이픈 제거 연결 중 하나를 선택할 수 있습니다.' });
-  if (unsupportedCount) warnings.push({ code: 'SCRIPT_REVIEW', message: '라틴 문자·한글·한자·일본어 외 문자 체계의 연결은 추천하지 않습니다. 해당 언어의 단어 경계를 직접 확인해 주세요.' });
-  if (suggestions.some((suggestion) => suggestion.kind === 'ambiguous')) warnings.push({ code: 'AMBIGUOUS_BOUNDARIES', message: '문장 끝·제목·단어 경계가 모호한 위치가 있습니다. 모든 위치의 기본 선택은 원문 유지입니다.' });
+  if (protectedSet.size) warnings.push({ code: 'PROTECTED_STRUCTURE', message: `목록·표·코드 등 구조가 있는 ${protectedSet.size}개 줄은 자동 판단 대상에서 제외했습니다. 이어지는 줄도 같은 문단이면 함께 보호합니다.`, params: { count: protectedSet.size } });
+  if (koreanCount) warnings.push({ code: 'KOREAN_SPACING', message: '한국어는 줄 끝이 단어 중간일 수 있습니다. 연결 후 띄어쓰기를 직접 확인해 주세요. 뜻이나 맞춤법은 교정하지 않습니다.', params: { count: koreanCount } });
+  if (hyphenCount) warnings.push({ code: 'HYPHEN_REVIEW', message: '줄 끝 하이픈은 자동으로 제거하지 않습니다. 각 위치에서 원문 유지, 하이픈 유지 연결, 하이픈 제거 연결 중 하나를 선택할 수 있습니다.', params: { count: hyphenCount } });
+  if (unsupportedCount) warnings.push({ code: 'SCRIPT_REVIEW', message: '라틴 문자·한글·한자·일본어 외 문자 체계의 연결은 추천하지 않습니다. 해당 언어의 단어 경계를 직접 확인해 주세요.', params: { count: unsupportedCount } });
+  if (suggestions.some((suggestion) => suggestion.kind === 'ambiguous')) warnings.push({ code: 'AMBIGUOUS_BOUNDARIES', message: '문장 끝·제목·단어 경계가 모호한 위치가 있습니다. 모든 위치의 기본 선택은 원문 유지입니다.', params: { count: suggestions.filter((suggestion) => suggestion.kind === 'ambiguous').length } });
 
   return {
     source,
